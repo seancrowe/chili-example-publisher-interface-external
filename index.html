@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple HTML Page</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+        }
+        header, footer {
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            padding: 1em 0;
+        }
+        main {
+            padding: 2em;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Welcome to CHILI Editor Example</h1>
+    </header>
+    <main>
+      <div id="buttons">
+      </div>
+      <div id="editor"></div>
+    </main>
+    <footer>
+        <p>Have Fun!!!</p>
+    </footer>
+    <script type="module">
+
+    import {PublisherInterface} from "https://unpkg.com/@chili-publish/publisher-interface@latest/dist/PublisherInterface.min.js";
+
+    const environment = "example";
+    const baseUrl = `https://${environment}.chili-publish.online/`;
+
+    // Use a key with too many permissions but it is just for the example
+    const apiKey = ""
+
+    // The ID of the document to load in the editor, you can also just load XML (see loadXml function)
+    const docId = "80910ab0-0559-4c01-b496-d12947266a60";
+
+    // This is just for testing, you would do this another way in production
+    const openAsEndUser = true
+
+    // Workspaces allow you to limit the CHILI tools, you can turn off the workspace fully too by adding &fullWS=false to the eidtor URL
+    const workspaceId = "6196c504-72cc-4d72-a6bb-8d18cd282fbf";
+
+    const editorUrl = `${baseUrl}/${environment}/editor_html.aspx?doc=${docId}&ws=${workspaceId}&apiKey=${apiKey}${openAsEndUser ? "&initialUserView=user" : ""}`;
+
+    addButtons([
+      ["Save Document To CHILI", () => saveDocument(baseUrl, docId, apiKey)],
+      ["Load XML", () => loadXml(workspaceId)],
+      ["Download XML", downloadXml],
+      ["Generate PDF", () => generatePDF(baseUrl, apiKey)],
+      ["Load External Image In Frame", setImage]
+    ]);
+
+    const editorDiv = document.getElementById("editor");
+    PublisherInterface.buildOnElement(editorDiv, editorUrl).then(
+      publisher => {
+        window.publisher = publisher;
+        publisher.iframe.style.width = "100%";
+        publisher.iframe.style.height = "800px";
+
+        // Register to events, DocumentFullyRendered is the event that tells you the document is fully done
+        publisher.addListener("DocumentFullyRendered", () => {
+          enableButtons();
+        });
+      }
+    );
+
+    function addButtons(buttons) {
+      const buttonsDiv = document.getElementById("buttons");
+
+      buttons.forEach(b => {
+        const newButton = document.createElement("button");
+        newButton.textContent = b[0];
+        if (b[1] != null) {
+          newButton.addEventListener("click", b[1]);
+        }
+        newButton.disabled = true;
+        buttonsDiv.appendChild(newButton);
+      })
+    }
+
+    function enableButtons(enable = true) {
+      const buttonsDiv = document.getElementById("buttons");
+
+      let buttons = buttonsDiv.getElementsByTagName("button");
+
+      for (var i = 0; i < buttons.length; i++) {
+        buttons[i].disabled = !enable;
+      }
+    }
+
+    async function saveDocument(baseUrl, docId, apiKey) {
+      enableButtons(false);
+      const resp = await fetch(`${baseUrl}/rest-api/v1.2/resources/Documents/items/${docId}/save`, {
+        "headers": {
+          "api-key": apiKey,
+          "content-type": "application/json;charset=UTF-8",
+        },
+        "body": JSON.stringify({ xml: (await window.publisher.executeFunction("document", "GetTempXML")) }),
+        "method": "PUT",
+      });
+
+      alert("Document save: " + (resp.ok) ? "success" : "failed");
+      enableButtons(true);
+    }
+
+    function loadXml(workspaceId) {
+      var fileInput = document.createElement("input");
+      fileInput.type = "file";
+
+      fileInput.addEventListener("change", function(event) {
+        const file = event.target.files[0];
+
+        if (file) {
+          const reader = new FileReader();
+
+          reader.onload = (e) => {
+            const fileContent = e.target.result;
+            enableButtons(false);
+            window.publisher.executeFunction("document", "OpenDocumentFromXml", fileContent, workspaceId);
+          };
+
+          reader.readAsText(file);
+        }
+        fileInput.remove();
+      });
+
+      fileInput.click();
+    }
+
+    async function downloadXml() {
+      const xml = await window.publisher.executeFunction("document", "GetTempXML");
+      const data = new Blob([xml], { type: "application/xml" });
+      const url = URL.createObjectURL(data);
+      const link = document.createElement("a");
+
+      link.href = url;
+      link.download = (await window.publisher.getObject("document")).name + ".xml";
+      link.click();
+      URL.revokeObjectURL(url);
+      link.remove();
+    }
+
+    async function setImage() {
+      const frame = await window.publisher.getObject("document.selectedFrame");
+
+      if (frame == null || frame.type != "image") {
+        alert("Please select an image frame");
+        return;
+      }
+
+      window.publisher.executeFunction("document.selectedFrame", "LoadContentFromExternalServerXmlString", '<item id="2" name="pumpkins-469641_1920.jpg" fileName="pumpkins-469641_1920.jpg" remoteURL="http://www.spicy-labs.com/external/images/pumpkins-469641_1920.jpg" thumb="http://www.spicy-labs.com/external/images/pumpkins-469641_1920.jpg" keepExternal="true" highResPdfURL="http://www.spicy-labs.com/external/images/pumpkins-469641_1920.pdf" accessibleFromClient="false"><fileInfo width="1920" height="1080" resolution="300" fileSize="542KB"/></item>');
+    }
+
+    async function generatePDF(baseUrl, apiKey) {
+      enableButtons(false);
+      const resp = await fetch(`${baseUrl}/rest-api/v1.2/resources/documents/tempxml/pdf`, {
+        "headers": {
+          "api-key": apiKey,
+          "content-type": "application/json;charset=UTF-8",
+        },
+        "body": JSON.stringify({
+          settingsXML: `<item name="Default" id="a2d4ad12-285e-42ab-9612-7889e079ae28" relativePath="" pdfEngine="1" missingAdPlaceHolderColor="#FF00FF" missingAdPlaceHolder="False" missingEditPlaceHolder="False" includeLinks="False" includeGuides="False" includeTextRangeBorder="True" includePageMargins="True" includeFrameBorder="True" imageQuality="" includeCropMarks="True" includeBleedMarks="True" includeImages="True" convertColors="False" colorProfile="" embedProfile="False" includeNonPrintingLayers="False" includeGrid="True" includeBleed="True" includeAdOverlays="False" includeSectionBreaks="False" includePageLabels="False" includeFrameInset="True" includeBaseLineGrid="True" includeSlug="True" includeAnnotations="False" outputSplitPages="1" layoutID="" createAllPages="True" pageRangeStart="1" userPassword="" ownerPassword="" pdfSubject="" pdfKeywords="" watermarkText="" pdfLayers="False" createSingleFile="True" createSpreads="False" serverOutputLocation="" pdfNamePattern="" slugLeft="" slugTop="" slugRight="" slugBottom="" bleedRight="3 mm" bleedTop="3 mm" bleedLeft="3 mm" useDocumentBleed="True" useDocumentSlug="True" optimizationOptions="" preflight_overrideDocumentSettings="False" preflight_minOutputResolution="72" preflight_minResizePercentage="70" preflight_maxResizePercentage="120" dataSourceIncludeBackgroundLayers="False" dataSourceCreateBackgroundPDF="True" dataSourceRowsPerPDF="1" dataSourceMaxRows="-1" dontDeleteExistingDirectory="False" collateOutputWidth="210mm" collateNumRows="3" collateNumCols="3" collateOutputHeight="297mm" collateColumnWidth="50mm" collateStartX="10mm" collateStartY="10mm" collateMarginX="10mm" allowExtractContent="True" collateMarginY="10mm" collateOutput="False" collateDrawPageBorder="False" collateIncludeFileHeader="False" missingAdSizePlaceHolderColor="#FF00FF" rgbSwatches="False" dropshadowQuality="150" missingEditPlaceHolderColor="#FF00FF" annotationBorderColor="#FF0000" annotationFillColor="#FFFFFF" annotationOpacity="50" linkBorderColor="#0000FF" dropshadowTextQuality="150" bleedBottom="3 mm" barWidthReduction="0 mm" markOffset="9pt" markWidth="0.5pt" dataSourceEngine="server_code" dataSourceNumConcurrent="3" dataSourceUnspecifiedContentType="variable_data" dataSourceIncludeGenerationLog="False" dataSourceUnspecifiedPageContentType="variable_data" outputIntentRegistryName="" outputIntentConditionIdentifier="" outputIntent="" pdfStandard="" pdfVersion="4" debugVtContent="False" watermarkType="none" watermarkPdfAssetID="" watermarkPdfAnchor="top_left" pageRangeEnd="999999" watermarkPdfSize="original" convertBlacks="False" convertAnyK100="True" convertSystemBlack="True" convert0_0_0_100="True" convertBlackToC="63" convertBlackToK="100" convertBlackToY="51" convertBlackToM="52" debugDropShadowsWithoutBlur="False" missingAdSizePlaceHolder="False" pdfCreator="CHILI Publisher" pdfAuthor="CHILI Publisher" allowPrinting="True" allowModifyDocument="True" fastWebView="False" embedFonts="True" useFontSubset="True" exportDatasourceXlsx="False" exportDatasourceCsv="False" pdfTitle="" dataSourceCreate="False" includeBookmarks="False" maxRecordsPerDatasourceFile="50000" minSuccessRate="100" errorHandling="error" removeInvisibleImageData="False" forPreview="False"><pdfvt_metaDataConfigItems/><color_images_settings downsampling="BicDownsampling" targetResolution="300" resolutionThreshold="450" compression="JPEG" compressionQuality="Max"/><grayscale_images_settings downsampling="BicDownsampling" targetResolution="300" resolutionThreshold="450" compression="JPEG" compressionQuality="Max"/><monochrome_images_settings downsampling="BicDownsampling" targetResolution="1200" resolutionThreshold="1800" compression="CCITTG4" compressionQuality=""/></item>`,
+          docXML: (await window.publisher.executeFunction("document", "GetTempXML"))
+        }),
+        "method": "POST",
+      });
+
+      let task = parseTaskString(await resp.text());
+
+      while (task.finished == "False") {
+        const resp = await fetch(`${baseUrl}/rest-api/v1.2/system/tasks/${task.id}/status`, {
+          "headers": {
+            "api-key": apiKey,
+          },
+          "method": "GET",
+        });
+
+        const taskXml = await resp.text()
+        task = parseTaskString(taskXml);
+        console.log(task);
+      }
+
+      if (task.succeeded == "True" && task.resultUrl != null) {
+        window.open(task.resultUrl, '_blank');
+      }
+      else {
+        alert("Task error");
+      }
+      enableButtons(true);
+    }
+
+    function parseTaskString(taskString) {
+      var parser = new DOMParser();
+      var xmlDoc = parser.parseFromString(taskString, "text/xml");
+      var taskElement = xmlDoc.documentElement;
+      var id = taskElement.getAttribute("id");
+      var finished = taskElement.getAttribute("finished");
+      var succeeded = taskElement.getAttribute("succeeded");
+      var resultEncoded = taskElement.getAttribute("result");
+      var resultXml = parser.parseFromString(resultEncoded, "text/xml");
+      var resultUrl = resultXml.documentElement.getAttribute("url");
+
+      return {
+        id: id,
+        finished: finished,
+        succeeded: succeeded,
+        resultUrl: resultUrl
+      };
+    }
+
+    </script>
+</body>
+</html>
+
